@@ -5,6 +5,7 @@ from camera_manager import CameraManager
 from face_detector import FaceDetector
 from filters.filtro_orejas import FiltroOrejas
 from filters.mustach_filter import MustachFilter
+from filters.lego_head import LegoHeadFilter
 
 logging.getLogger('mediapipe').setLevel(logging.ERROR)  # Solo muestra errores, no warnings
 
@@ -12,6 +13,7 @@ def elegir_filtro():
     print("Selecciona filtro:")
     print("  o / orejas   -> Filtro de orejas")
     print("  m / mostacho -> Filtro de mostacho")
+    print("  l / lego     -> Filtro de lego head")
     print("  none         -> Ninguno")
     opcion = input("Opción: ").strip().lower()
     if opcion in ("o", "orejas", "oreja"):
@@ -21,6 +23,8 @@ def elegir_filtro():
         path = "assets/mustache.png"
         # ancho base puede ajustarse; 100 parece un tamaño razonable
         return MustachFilter(image_path=path, object_width=100)
+    if opcion in ("l", "lego"):
+        return LegoHeadFilter()
     return None
 
 
@@ -40,8 +44,7 @@ try:
 
         # Aplicar filtro si fue seleccionado
         if selected_filter and landmarks:
-            selected_filter.apply(output, landmarks)
-
+            output = selected_filter.apply(output, landmarks)
         cv2.imshow("Mallas", output)
 
         key = cv2.waitKey(1)

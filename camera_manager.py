@@ -1,7 +1,7 @@
 import cv2 as cv
 
 class CameraManager: # Esta clase levanta la cámara y lee los frames de video. Es una clase simple que encapsula la funcionalidad de la cámara.
-    def __init__(self, camera_index=0):
+    def __init__(self, camera_index=1):
         self.cap = cv.VideoCapture(camera_index) # Levanta la cámara. El índice 0 generalmente se refiere a la cámara predeterminada del sistema.
 
     def read_frame(self):
