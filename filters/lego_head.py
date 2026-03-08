@@ -46,7 +46,7 @@ class LegoHeadFilter:
         )
 
         # Nose -> neck in canonical head coordinates (mm).
-        self.head_neck_offset_local = np.array([0.0, -110.0, -110.0], dtype=np.float32)
+        self.head_neck_offset_local = np.array([0.0, -110.0, -130.0], dtype=np.float32)
 
         self.focal_length = 1000.0
         self.h, self.w = 480, 640
