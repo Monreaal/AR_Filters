@@ -28,7 +28,7 @@ class LegoHeadFilter:
             except Exception:
                 pass
 
-        # Precompute mesh vertices/faces para proyección rápida
+        # Precompute mesh vertices/faces para proyecciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n rÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡pida
         self.mesh_vertices = np.asarray(self.mesh.vertices, dtype=np.float32)
         self.mesh_faces = np.asarray(self.mesh.faces, dtype=np.int32)
 
@@ -39,17 +39,20 @@ class LegoHeadFilter:
         if max_dim > 0:
             self.mesh_vertices /= max_dim
 
-        # Calcular altura de la malla en el eje Y (para escalar según la altura de la cara)
+        # Calcular altura de la malla en el eje Y (para escalar segÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âºn la altura de la cara)
         self.mesh_y_min = float(np.min(self.mesh_vertices[:, 1]))
         self.mesh_y_max = float(np.max(self.mesh_vertices[:, 1]))
         self.mesh_height = self.mesh_y_max - self.mesh_y_min
+        self.mesh_x_min = float(np.min(self.mesh_vertices[:, 0]))
+        self.mesh_x_max = float(np.max(self.mesh_vertices[:, 0]))
+        self.mesh_width = self.mesh_x_max - self.mesh_x_min
 
         # Ajustar (aproximadamente) para que la punta de la nariz quede en el origen.
         # Esto hace que solvePnP (que usa como referencia el punto de la nariz) se alinee mejor.
         z = self.mesh_vertices[:, 2]
         z_mean = z.mean()
         if (z.max() - z_mean) > (z_mean - z.min()):
-            # el eje +Z apunta hacia adelante; usar el vértice más adelantado
+            # el eje +Z apunta hacia adelante; usar el vÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©rtice mÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡s adelantado
             tip_idx = int(np.argmax(z))
         else:
             # el eje -Z apunta hacia adelante
@@ -58,12 +61,15 @@ class LegoHeadFilter:
         self.mesh_vertices -= tip
 
         # Puntos clave de referencia para solvePnP (Medio de cara)
-        # Estos índices usan el esquema de MediaPipe FaceMesh.
+        # Estos ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â­ndices usan el esquema de MediaPipe FaceMesh.
         self._face_mesh_idxs = {
             'nose_tip': 1,
+            'forehead': 10,
             'chin': 152,
             'left_eye_outer': 33,
             'right_eye_outer': 263,
+            'left_temple': 234,
+            'right_temple': 454,
             'left_mouth': 61,
             'right_mouth': 291
         }
@@ -93,17 +99,17 @@ class LegoHeadFilter:
     def _project_mesh(self, frame, rvec, tvec, scale, offset2d=(0, 0)):
         """Proyecta el mesh en la imagen usando pose (rvec/tvec) y escala.
 
-        Dibuja la malla rellena para dar sensación de sólido, y luego añade
+        Dibuja la malla rellena para dar sensaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n de sÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³lido, y luego aÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â±ade
         un wireframe para marcar los bordes.
 
-        offset2d: corrección en pixeles para alinear el modelo con los landmarks.
+        offset2d: correcciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n en pixeles para alinear el modelo con los landmarks.
         """
-        # scale: factor relativo para adaptar tamaño de la malla al rostro
+        # scale: factor relativo para adaptar tamaÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â±o de la malla al rostro
         verts = self.mesh_vertices * scale
 
         # desplazar el casco hacia arriba en el espacio 3D
-        verts[:, 1] += scale * 120
-        verts[:, 2] -= scale * 40
+        verts[:, 1] += scale * 0.25
+        verts[:, 2] -= scale * 0.10
 
         # Rotar y trasladar
         R, _ = cv2.Rodrigues(rvec)
@@ -117,7 +123,7 @@ class LegoHeadFilter:
         if offset2d != (0, 0):
             projected = projected + np.array(offset2d, dtype=np.int32)
 
-        # Crear máscara a partir de la proyección (llenar todos los triángulos)
+        # Crear mÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡scara a partir de la proyecciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n (llenar todos los triÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡ngulos)
         mask = np.zeros(frame.shape[:2], dtype=np.uint8)
         faces = projected[self.mesh_faces]
 
@@ -128,7 +134,7 @@ class LegoHeadFilter:
             for face in faces:
                 cv2.fillPoly(mask, [face], 255)
 
-        # Generar overlay de color sólido a partir de la máscara
+        # Generar overlay de color sÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³lido a partir de la mÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡scara
         color_fill = (80, 190, 240)
         overlay = np.zeros_like(frame)
         overlay[:, :] = color_fill
@@ -203,9 +209,21 @@ class LegoHeadFilter:
 
         image_points = np.array(image_points, dtype=np.float32)
 
-        # Actualizar cámara según tamaño del frame
+        # Puntos extra para ajustar tama;o y posicion
+        def lm_xy(idx):
+            lm = face.landmark[idx]
+            return np.array([lm.x * frame.shape[1], lm.y * frame.shape[0]], dtype=np.float32)
+
+        forehead_xy = lm_xy(self._face_mesh_idxs['forehead'])
+        chin_xy = lm_xy(self._face_mesh_idxs['chin'])
+        left_temple_xy = lm_xy(self._face_mesh_idxs['left_temple'])
+        right_temple_xy = lm_xy(self._face_mesh_idxs['right_temple'])
+        left_eye_xy = lm_xy(self._face_mesh_idxs['left_eye_outer'])
+        right_eye_xy = lm_xy(self._face_mesh_idxs['right_eye_outer'])
+
+        # Actualizar cÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡mara segÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âºn tamaÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â±o del frame
         h, w = frame.shape[:2]
-        focal_length = w  # aproximación común: focal = ancho de la imagen en píxeles
+        focal_length = w  # aproximaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n comÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âºn: focal = ancho de la imagen en pÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â­xeles
         self.camera_matrix = np.array([
             [focal_length, 0, w / 2],
             [0, focal_length, h / 2],
@@ -229,11 +247,7 @@ class LegoHeadFilter:
                 self.dist_coeffs,
                 flags=cv2.SOLVEPNP_EPNP
         )
-
-        # ajustar escala de la traslación para que el modelo no quede demasiado lejos
-        tvec = tvec * .15   
-
-        # Mostrar indicador rápido de éxito/fallo (debug)
+        # Mostrar indicador rÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡pido de ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©xito/fallo (debug)
         status_text = "POSE OK" if success else "POSE FAIL"
         cv2.putText(frame, status_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0) if success else (0, 0, 255), 2)
 
@@ -251,47 +265,39 @@ class LegoHeadFilter:
             cv2.drawFrameAxes(frame, self.camera_matrix, self.dist_coeffs, rvec, tvec, length=50)
         except Exception:
             pass
+        # Escala basada en tamaÃƒÆ’Ã‚Â±o real de cara en pixeles y profundidad estimada.
+        focal = float(self.camera_matrix[0, 0])
+        z = float(abs(tvec[2, 0])) if tvec.ndim == 2 else float(abs(tvec[2]))
+        z = max(z, 1e-3)
 
-        # Determinar escala para que el modelo cubra la cara ~ 120%
-        # Usamos la distancia entre ojos en imagen como referencia.
-        left_eye = image_points[2]
-        right_eye = image_points[3]
-        eye_dist = np.linalg.norm(left_eye - right_eye)
-        scale = eye_dist / 100.0  # 100mm es el valor aproximado usado en model_points
-        # Aumentar el tamaño para que el casco sea más visible
-        scale *= 10.0
-        # Evitar escala 0 o muy pequeña
-        scale = max(scale, 0.1)
-        # Comprobar si la proyección genera puntos visibles
-        frame_h, frame_w = frame.shape[:2]
-        projected, _ = cv2.projectPoints(self.mesh_vertices * scale, rvec, tvec, self.camera_matrix, self.dist_coeffs)
-        projected = projected.reshape(-1, 2)
-        if not ((projected[:, 0] >= 0) & (projected[:, 0] < frame_w) & (projected[:, 1] >= 0) & (projected[:, 1] < frame_h)).any():
-            # Si nada queda en pantalla, dibujar la caja de referencia
-            xs = image_points[:, 0]
-            ys = image_points[:, 1]
-            x_min, x_max = int(xs.min()), int(xs.max())
-            y_min, y_max = int(ys.min()), int(ys.max())
-            cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-            return frame
+        temple_dist_px = float(np.linalg.norm(left_temple_xy - right_temple_xy))
+        face_height_px = float(np.linalg.norm(forehead_xy - chin_xy))
+        target_width_px = max(temple_dist_px * 1.15, 1.0)
+        target_height_px = max(face_height_px * 1.25, 1.0)
 
-        # Ajuste de offset 2D para centrar la malla en la nariz detectada.
-        # Esto ayuda cuando la proyección del modelo sale del cuadro.
-        nose_pos = image_points[0]
-        origin_proj, _ = cv2.projectPoints(np.array([[0.0, 0.0, 0.0]], dtype=np.float32), rvec, tvec, self.camera_matrix, self.dist_coeffs)
-        origin_proj = origin_proj.reshape(2)
-        # Desplazar hacia arriba para que el casco quede sobre la cabeza (no en el mentón)
-        y_offset = int(eye_dist * 0.6)
-        
+        scale_w = (target_width_px * z / focal) / max(self.mesh_width, 1e-6)
+        scale_h = (target_height_px * z / focal) / max(self.mesh_height, 1e-6)
+        scale = max(0.5 * (scale_w + scale_h), 1e-3)
+
+        # Reubicar el origen a la zona media de la cara (evita que quede arriba).
+        eye_center = 0.5 * (left_eye_xy + right_eye_xy)
+        desired_anchor = eye_center + 0.65 * (chin_xy - eye_center)
+        origin_proj, _ = cv2.projectPoints(
+            np.array([[0.0, 0.0, 0.0]], dtype=np.float32),
+            rvec,
+            tvec,
+            self.camera_matrix,
+            self.dist_coeffs,
+        )
+        origin_xy = origin_proj.reshape(2)
+        offset2d = tuple(np.round(desired_anchor - origin_xy).astype(np.int32))
 
         # Proyectar y dibujar el mesh
-        output = self._project_mesh(frame, rvec, tvec, scale)
+        output = self._project_mesh(frame, rvec, tvec, scale, offset2d=offset2d)
 
-        # Si el casco sigue sin mostrarse, dibujamos una señal clara en la proyección del origen
+        # Si el casco sigue sin mostrarse, dibujamos una seÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â±al clara en la proyecciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del origen
         origin_proj, _ = cv2.projectPoints(np.array([[0.0, 0.0, 0.0]], dtype=np.float32), rvec, tvec, self.camera_matrix, self.dist_coeffs)
-        origin_xy = origin_proj.reshape(2).astype(int)
+        origin_xy = (origin_proj.reshape(2) + np.array(offset2d, dtype=np.float32)).astype(int)
         cv2.circle(output, tuple(origin_xy), 10, (0, 0, 255), -1)
 
         return output
-    
-        print("tvec:", tvec.ravel())
